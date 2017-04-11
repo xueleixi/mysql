@@ -1,0 +1,40 @@
+
+--做任何测试时都要考虑结果集在总记录数中的占比，如果占比过高，mysql会智能判断，不使用索引，得出的结论不符合索引理论
+
+-- innodb存储引擎，索引中会带主键，所以如果查询字段除了索引字段还包括主键，那么依然可以使用索引覆盖
+explain select actor_id,last_name from actor where last_name='HOPPER';
+
+-- 延迟关联-利用索引覆盖加快查找速度，适用于总记录数比较大而匹配记录数少时
+-- select * from tb join(select id from tb where name='lisi' and title like '%nice day%')as t on tb.id=t.id;
+explain select * from actor join(select actor_id from actor where last_name like '%GUINESS%')as t on actor.actor_id=t.actor_id;
+
+-- 索引扫描/索引排序  没有出现file_sort就是索引排序
+explain select rental_id,staff_id from rental where rental_date='2005-05-25' order by inventory_id,customer_id;
+--排序顺序必须和索引顺序一致，并且排序方向一致
+explain select rental_id,staff_id from rental where rental_date='2005-05-25' order by customer_id,inventory_id;
+--最左列使用了范围查找并且也在order by中的第一列，那么可以使用索引；如果不在order by第一列，就不能使用
+explain select rental_id,staff_id from rental where rental_date>'2006-05-25' order by rental_date,inventory_id,customer_id;
+-- 当结果集过大时，mysql会选择使用扫表方式
+explain select rental_id,staff_id from rental where rental_date>'2005-05-25' order by rental_date,inventory_id,customer_id;
+-- 多个等于条件in对于排序来说也是范围查找
+explain select rental_id,staff_id from rental where rental_date='2005-05-25' and inventory_id in(1,2) order by customer_id;
+
+-- 创建多列索引时，只有一个列可以使用范围查找并用索引，其右侧列就不能使用索引了，因此设计的时候前面的列尽量=，如果取值范围有限可以用in,当不使用左侧列的检索条件时，也可以使用in(所有可能的值)这种技巧
+
+-- 分页/排序的优化（sex,rating）==>延迟关联
+select * from tb join (select pk from tb where sex='m' order by rating limit 100000,10) as t using(pk);
+
+
+-- 
+select film_id from film join film_actor using(film_id) where film_id>500;
+
+
+常用函数：
+	left(field,4)  left(now(),10) right(now(),8)
+	date_add(now(),interval 2 day)
+	date_sub(now(),interval 2 month)
+实例：
+	1-去年今日
+	select concat(left(date_sub(now(),interval 1 year),11),'00:00:00')
+	1-查询去年注册的用户：
+	select username from users where regtime > concat(left(date_sub(now(),interval 1 year),11),'00:00:00')
